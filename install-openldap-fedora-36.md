@@ -320,4 +320,8 @@ sudo systemctl status sssd
 ```shell
 id utilisateur_ldap
 su - utilisateur_ldap
+<<<<<<< HEAD
 ```
+=======
+```
+>>>>>>> c9b153e35e9da9c169af1bb34c28a671fe360ebb
