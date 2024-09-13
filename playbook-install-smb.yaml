@@ -2,8 +2,12 @@
 - name: Installer et configurer Samba en tant que contrôleur de domaine
   hosts: smb-srv
   become: yes
-  vars_files: 
-    - smb-vars.yaml
+  vars:
+    ADM_PWD: Accel2025
+    DOMAINE: DOUANES
+    REALM: DOUANES.LAN 
+    DOMAINE_DNS: douanes.lan
+    DOMAIN_SID:  S-1-5-21-3237533567-1834389219-2521977855
 
   tasks:
     - name: Installer Samba et les dépendances

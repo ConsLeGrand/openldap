@@ -23,7 +23,7 @@
 
     - name: Créer le fichier custom.conf pour la configuration DNS
       copy:
-        dest: Créer le fichier custom.conf pour la configuration DNS
+        dest: /etc/systemd/resolved.conf.d/custom.conf
         content: |
           [Resolve]
           DNSStubListener=no
@@ -39,7 +39,6 @@
     - name: Provisonner le domaine Samba
       command: samba-tool domain provision --server-role=dc --use-rfc2307 --dns-backend=SAMBA_INTERNAL --realm=$REALM --domain=$DOMAINE --adminpass=$ADM_PWD --domain-sid=$DOMAIN_SID
 
-
     - name: Remplacer le dns forwarder dans le fichier smb.conf qui pointe par defaut sur l'IP de l'hote samba par un dns au choix ici 8.8.8.8 
       lineinfile:
         path: /etc/samba/smb.conf
@@ -47,6 +46,11 @@
         line: 'dns forward = 8.8.8.8'
         state: present
 
+    - name: Insérer la ligne "ldap server require strong auth = no" après la ligne contenant "dns forwarder"
+      ansible.builtin.lineinfile:
+        path: /etc/samba/smb.conf
+        insertafter: '^dns forwarder'
+        line: 'ldap server require strong auth = no'
 
     - name: Créer le fichier de configuration Kerberos
       copy:
