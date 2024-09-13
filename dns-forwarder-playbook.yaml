@@ -1,0 +1,84 @@
+- name: Installer et configurer le serveur dns bind
+  hosts: dns-srv
+  become: yes
+  vars:
+    samba: 192.168.1.1
+    windows: 192.168.1.2
+    domain: douanes.lan
+
+  tasks:
+    - name: Installer Bind
+      ansible.builtin.dnf:
+        name: 
+        - bind
+        - firewalld
+        state: present
+
+    - name: Peupler le fichier named.conf
+      ansible.builtin.copy:
+        dest: /etc/named.conf
+        content: |
+            options {
+                listen-on port 53 { any; };
+                listen-on-v6 port 53 { any; };
+                directory       "/var/named";
+                dump-file       "/var/named/data/cache_dump.db";
+                statistics-file "/var/named/data/named_stats.txt";
+                memstatistics-file "/var/named/data/named_mem_stats.txt";
+                recursing-file  "/var/named/data/named.recursing";
+                secroots-file   "/var/named/data/named.secroots";
+                allow-query     { any; };
+
+                // Forwarders configuration
+                forwarders {
+                    8.8.8.8;  // Google DNS
+                    8.8.4.4;  // Google DNS
+                    1.1.1.1;  // Cloudflare DNS
+                };
+
+                dnssec-enable yes;
+                dnssec-validation yes;
+
+                managed-keys-directory "/var/named/dynamic";
+                pid-file "/run/named/named.pid";
+                session-keyfile "/run/named/session.key";
+            };
+            
+            zone "{{ domain }}" IN {
+                type forward;
+                forward only;
+                forwarders { {{ samba }}; };  // openldap samba
+              // forwarders { {{ windows }}; };  // windows ad
+            };
+      notify: restart_dns
+
+    - name: Activer et démarrer Firewalld
+      service:
+        name: firewalld
+        state: started
+        enabled: yes
+
+    - name: Ouvrir le service dns
+      ansible.posix.firewalld:
+        service: dns
+        permanent: true
+        state: enabled
+      notify: restart_fwd
+
+    - name: Activer et démarrer Bind
+      service:
+        name: bind
+        state: started
+        enabled: yes
+
+  handlers:
+    - name: restart_fwd
+      service:
+        name: firewalld
+        state: restarted
+
+    - name: restart_dns
+      service:
+        name: bind
+        state: restarted
+

@@ -1,0 +1,112 @@
+---
+- name: Installer et configurer Samba en tant que contrôleur de domaine
+  hosts: smb-srv
+  become: yes
+  vars_files: 
+    - smb-vars.yaml
+
+  tasks:
+    - name: Installer Samba et les dépendances
+      ansible.builtin.dnf:
+        name:
+          - samba
+          - samba-dc 
+          - samba-client 
+          - krb5-workstation
+          - firewalld
+        state: present
+      
+
+    - name: Configurer le nom d'hôte
+      command: hostnamectl set-hostname dc1.$DOMAINE_DNS
+
+    - name: Activer et démarrer Firewalld
+      service:
+        name: firewalld
+        state: started
+        enabled: yes
+
+    - name: Ouvrir le service Samba dans le pare-feu et Recharger le pare-feu
+      ansible.posix.firewalld:
+        service: samba-dc  
+        permanent: true
+        state: enabled
+      notify: restart_fwd
+      
+    - name: Activer les paramètres SELinux pour Samba et Appliquer les contextes de sécurité avec restorecon
+      shell: "setsebool -P samba_create_home_dirs=on samba_domain_controller=on samba_enable_home_dirs=on samba_portmapper=on use_samba_home_dirs=on  && restorecon -Rv /"
+
+    - name: Créer le répertoire pour la configuration DNS personnalisée
+      ansible.builtin.file: 
+        path: /etc/systemd/resolved.conf.d
+        state: directory 
+        mode: '0755'
+
+    - name: Créer le fichier custom.conf pour la configuration DNS
+      ansible.builtin.copy:
+        dest: /etc/systemd/resolved.conf.d/custom.conf
+        content: |
+          [Resolve]
+          DNSStubListener=no
+          Domains=$DOMAINE_DNS
+          DNS=$IP_DNS
+      notify: restart_dns
+
+    - name: Supprimer le fichier de configuration Samba par défaut
+      ansible.builtin.file: 
+        path: /etc/samba/smb.conf
+        state: absent
+
+    - name: Provisonner le domaine Samba
+      command: samba-tool domain provision --server-role=dc --use-rfc2307 --dns-backend=SAMBA_INTERNAL --realm=$REALM --domain=$DOMAINE --adminpass=$ADM_PWD --domain-sid=$DOMAIN_SID
+
+    - name: Remplacer le dns forwarder dans le fichier smb.conf qui pointe par defaut sur l'IP de l'hote samba par un dns au choix ici 8.8.8.8 
+      ansible.builtin.lineinfile:
+        path: /etc/samba/smb.conf
+        regexp: '^dns forwarder ='
+        line: 'dns forward = 8.8.8.8'
+        state: present
+
+    - name: Créer le fichier de configuration Kerberos
+      ansible.builtin.copy:
+        dest: /etc/krb5.conf
+        content: |
+          [libdefaults]
+            default_realm = $REALM
+            dns_lookup_realm = false
+            dns_lookup_kdc = true
+
+          [realms]
+            DOUANES.LAN = {
+              default_domain = $DOMAINE
+            }
+
+          [domain_realm]
+            dc1.douanes.lan = $REALM
+
+    - name: Activer et démarrer Samba
+      service:
+        name: samba
+        state: started
+        enabled: yes
+
+  handlers:
+    - name: restart_selinux
+      service:
+        name: systemd-sysctl
+        state: restarted
+
+    - name: restart_fwd
+      service:
+        name: firewalld
+        state: restarted
+
+    - name: restart_dns
+      service:
+        name: systemd-resolved
+        state: restarted
+
+    - name: restart_samba
+      service:
+        name: samba
+        state: restarted
